@@ -4,7 +4,7 @@ from django.urls import reverse
 
 import datetime
 
-from .models import Question
+from .models import Question, Choice
 
 class QuestionModelTest(TestCase):
     def test_was_published_recently_with_future_question(self):
@@ -25,6 +25,12 @@ class QuestionModelTest(TestCase):
 
 def create_question(new_question_text, offset_days):
     time = timezone.now() + datetime.timedelta(days=offset_days)
+    question = Question.objects.create(question_text=new_question_text, pub_date=time)
+    choice = Choice.objects.create(question=question, choice_text='test')
+    return question
+
+def create_question_no_choice(new_question_text, offset_days):
+    time = timezone.now() + datetime.timedelta(days=offset_days)
     return Question.objects.create(question_text=new_question_text, pub_date=time)
 
 
@@ -38,6 +44,30 @@ class QuestionIndexViewTests(TestCase):
         self.assertContains(response, "No polls are available")
         self.assertQuerysetEqual(response.context["latest_question_list"], [])
 
+    def test_question_no_choice(self):
+        """
+        If question with choices exist, an appropriate message is displayed.
+        """
+        create_question_no_choice("No choice question.", -5)
+        response = self.client.get(reverse("polls:index"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "No polls are available")
+        self.assertQuerysetEqual(response.context["latest_question_list"], [])
+
+    def test_question_with_choice_and_no_choice(self):
+        """
+        Even if both no and with choice questions exist, only with choice questions
+        are displayed.
+        """
+        question = create_question("With choice question.", -5)
+        create_question_no_choice("No choice question", -5)
+        response = self.client.get(reverse("polls:index"))
+        self.assertQuerysetEqual(
+            response.context["latest_question_list"],
+            [question],
+        )
+
+
     def test_past_question(self):
         """
         Questions with a pub_date in the past are displayed on the
@@ -49,7 +79,7 @@ class QuestionIndexViewTests(TestCase):
             response.context['latest_question_list'],
             [question],
         )
-
+    
     def test_future_question(self):
         """
         Questions with a pub_date in the future aren't displayed on
@@ -106,9 +136,64 @@ class QuestionDetailViewTests(TestCase):
         response = self.client.get(url)
         self.assertContains(response, past_question.question_text)
 
+    def test_question_with_no_choice(self):
+        """
+        The detail view of a question with no choice foreign key
+        displays the question's text.
+        """
+        no_choice_question = create_question_no_choice("No choice.", -5)
+        url = reverse('polls:detail', args=(no_choice_question.id,))
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 404)
+
+    def test_question_with_choice(self):
+        """
+        The detail view of a question with choice foreign key
+        displays the question's text.
+        """
+        with_choice_question = create_question("with choice.", -5)
+        url = reverse('polls:detail', args=(with_choice_question.id,))
+        response = self.client.get(url)
+        self.assertContains(response, with_choice_question.question_text)
+
+
 class QuestionResultViewTests(TestCase):
     def test_future_question_result(self):
-        pass
-    
+        """
+        The result view of a question with a pub_date in the future
+        returns a 404 not found.
+        """
+        future_question = create_question("Future question.", 5)
+        url = reverse('polls:results', args=(future_question.id,))
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 404)
+
     def test_past_question_result(self):
-        pass
+        """
+        The result view of a question with a pub_date in the past
+        displays the question's text.
+        """
+        past_question = create_question("Past question.", -5)
+        url = reverse('polls:results', args=(past_question.id,))
+        response = self.client.get(url)
+        self.assertContains(response, past_question.question_text)
+
+    def test_question_with_no_choice(self):
+        """
+        The result view of a question with no choice foreign key
+        displays the question's text.
+        """
+        no_choice_question = create_question_no_choice("No choice.", -5)
+        url = reverse('polls:results', args=(no_choice_question.id,))
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 404)
+
+    def test_question_with_choice(self):
+        """
+        The result view of a question with choice foreign key
+        displays the question's text.
+        """
+        with_choice_question = create_question("with choice.", -5)
+        url = reverse('polls:results', args=(with_choice_question.id,))
+        response = self.client.get(url)
+        self.assertContains(response, with_choice_question.question_text)
